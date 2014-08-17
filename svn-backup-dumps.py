@@ -45,10 +45,10 @@
 #
 # 1. Create a full dump (revisions 0 to HEAD).
 #
-#    svn-backup-dumps.py <repos> <dumpdir>
+#    svn-backup-dumps.py <repos or URL> <dumpdir>
 #
-#    <repos>      Path to the repository.
-#    <dumpdir>    Directory for storing the dump file.
+#    <repos or URL> Path or URL to the repository.
+#    <dumpdir>      Directory for storing the dump file.
 #
 #    This creates a dump file named 'src.000000-NNNNNN.svndmp.gz'
 #    where NNNNNN is the revision number of HEAD.
@@ -56,11 +56,11 @@
 #
 # 2. Create incremental dumps containing at most N revisions.
 #
-#    svn-backup-dumps.py -c <count> <repos> <dumpdir>
+#    svn-backup-dumps.py -c <count> <repos or URL> <dumpdir>
 #
-#    <count>      Count of revisions per dump file.
-#    <repos>      Path to the repository.
-#    <dumpdir>    Directory for storing the dump file.
+#    <count>        Count of revisions per dump file.
+#    <repos or URL> Path or URL to the repository.
+#    <dumpdir>      Directory for storing the dump file.
 #
 #    When started the first time with a count of 1000 and if HEAD is
 #    at 2923 it creates the following files:
@@ -77,11 +77,11 @@
 #
 # 3. Create incremental single revision dumps (for use in post-commit).
 #
-#    svn-backup-dumps.py -r <revnr> <repos> <dumpdir>
+#    svn-backup-dumps.py -r <revnr> <repos or URL> <dumpdir>
 #
-#    <revnr>      A revision number.
-#    <repos>      Path to the repository.
-#    <dumpdir>    Directory for storing the dump file.
+#    <revnr>        A revision number.
+#    <repos or URL> Path or URL to the repository.
+#    <dumpdir>      Directory for storing the dump file.
 #
 #    This creates a dump file named 'src.NNNNNN.svndmp.gz' where
 #    NNNNNN is the revision number of HEAD.
@@ -89,10 +89,10 @@
 #
 # 4. Create incremental dumps relative to last dump
 #
-#    svn-backup-dumps.py -i <repos> <dumpdir>
+#    svn-backup-dumps.py -i <repos or URL> <dumpdir>
 #
-#    <repos>      Path to the repository.
-#    <dumpdir>    Directory for storing the dump file.
+#    <repos or URL> Path or URL to the repository.
+#    <dumpdir>      Directory for storing the dump file.
 #
 #    When if dumps are performed when HEAD is 2923,
 #    then when HEAD is 3045, is creates these files:
@@ -105,25 +105,25 @@
 #
 #    svn-backup-dumps.py -z ...
 #
-#    ...          More options, see 1-4, 7, 8.
+#    ...            More options, see 1-4, 7, 8.
 #
 #
 # 6. Create bzipped dump files.
 #
 #    svn-backup-dumps.py -b ...
 #
-#    ...          More options, see 1-4, 7, 8.
+#    ...            More options, see 1-4, 7, 8.
 #
 #
 # 7. Transfer the dumpfile to another host using ftp.
 #
 #    svn-backup-dumps.py -t ftp:<host>:<user>:<password>:<path> ...
 #
-#    <host>       Name of the FTP host.
-#    <user>       Username on the remote host.
-#    <password>   Password for the user.
-#    <path>       Subdirectory on the remote host.
-#    ...          More options, see 1-6.
+#    <host>         Name of the FTP host.
+#    <user>         Username on the remote host.
+#    <password>     Password for the user.
+#    <path>         Subdirectory on the remote host.
+#    ...            More options, see 1-6.
 #
 #    If <path> contains the string '%r' it is replaced by the
 #    repository name (basename of the repository path).
@@ -133,11 +133,11 @@
 #
 #    svn-backup-dumps.py -t smb:<share>:<user>:<password>:<path> ...
 #
-#    <share>      Name of an SMB share in the form '//host/share'.
-#    <user>       Username on the remote host.
-#    <password>   Password for the user.
-#    <path>       Subdirectory of the share.
-#    ...          More options, see 1-6.
+#    <share>        Name of an SMB share in the form '//host/share'.
+#    <user>         Username on the remote host.
+#    <password>     Password for the user.
+#    <path>         Subdirectory of the share.
+#    ...            More options, see 1-6.
 #
 #    If <path> contains the string '%r' it is replaced by the
 #    repository name (basename of the repository path).
@@ -149,7 +149,7 @@
 #  - improve documentation
 #
 
-__version = "0.6"
+__version = "0.7"
 
 import sys
 import os
@@ -162,6 +162,7 @@ import re
 from optparse import OptionParser
 from ftplib import FTP
 from subprocess import Popen, PIPE
+from urlparse import urlparse
 
 try:
     import bz2
@@ -284,29 +285,46 @@ class SvnBackup:
         if len(args) != 3:
             if len(args) < 3:
                 raise SvnBackupException("too few arguments, specify"
-                                         " repospath and dumpdir.\nuse -h or"
+                                         " repospath (or URL) and dumpdir.\nuse -h or"
                                          " --help option to see help.")
             else:
                 raise SvnBackupException("too many arguments, specify"
-                                         " repospath and dumpdir only.\nuse"
+                                         " repospath (or URL) and dumpdir only.\nuse"
                                          " -h or --help option to see help.")
         self.__repospath = args[1]
         self.__dumpdir = args[2]
-        # check repospath
-        rpathparts = os.path.split(self.__repospath)
-        if len(rpathparts[1]) == 0:
-            # repospath without trailing slash
-            self.__repospath = rpathparts[0]
-        if not os.path.exists(self.__repospath):
-            raise SvnBackupException("repos '%s' does not exist." % self.__repospath)
-        if not os.path.isdir(self.__repospath):
-            raise SvnBackupException("repos '%s' is not a directory." % self.__repospath)
-        for subdir in [ "db", "conf", "hooks" ]:
-            dir = os.path.join(self.__repospath, subdir)
-            if not os.path.isdir(dir):
-                raise SvnBackupException("repos '%s' is not a repository." % self.__repospath)
-        rpathparts = os.path.split(self.__repospath)
-        self.__reposname = rpathparts[1]
+
+        # check whether TARGET is an URL or a local repospath
+        url = urlparse(self.__repospath)
+        if url.scheme is None:
+            # TARGET is a local repospath
+            self.__is_local_repos = True
+        
+            # check repospath
+            rpathparts = os.path.split(self.__repospath)
+            if len(rpathparts[1]) == 0:
+                # repospath without trailing slash
+                self.__repospath = rpathparts[0]
+            if not os.path.exists(self.__repospath):
+                raise SvnBackupException("repos '%s' does not exist." % self.__repospath)
+            if not os.path.isdir(self.__repospath):
+                raise SvnBackupException("repos '%s' is not a directory." % self.__repospath)
+            for subdir in [ "db", "conf", "hooks" ]:
+                dir = os.path.join(self.__repospath, subdir)
+                if not os.path.isdir(dir):
+                    raise SvnBackupException("repos '%s' is not a repository." % self.__repospath)
+            rpathparts = os.path.split(self.__repospath)
+            self.__reposname = rpathparts[1]
+        else:
+            # TARGET is an URL
+            self.__is_local_repos = False
+
+            # remove trailing slash
+            self.__repospath = self.__repospath.rstrip('/')
+            # get repository name
+            rpathparts = self.__repospath.split('/')
+            self.__reposname = rpathparts[-1]
+
         if self.__reposname in [ "", ".", ".." ]:
             raise SvnBackupException("couldn't extract repos name from '%s'." % self.__repospath)
         # check dumpdir
@@ -321,13 +339,51 @@ class SvnBackup:
         self.__deltas = options.deltas
         self.__relative_incremental = options.relative_incremental
 
-        # svnadmin/svnlook path
+        # svnrdump doesn't support --deltas option, so check it.
+        if self.__deltas and self.__is_local_repos is False:
+            raise SvnBackupException("svnrdump doen't support --deltas option")
+
+        # svnadmin/svnlook/svnrdump/svn path
         self.__svnadmin_path = "svnadmin"
         if options.svnadmin_path:
            self.__svnadmin_path = options.svnadmin_path
         self.__svnlook_path = "svnlook"
         if options.svnlook_path:
            self.__svnlook_path = options.svnlook_path
+        self.__svnrdump_path = "svnrdump"
+        if options.svnrdump_path:
+           self.__svnrdump_path = options.svnrdump_path
+        self.__svn_path = "svn"
+        if options.svn_path:
+           self.__svn_path = options.svn_path
+
+        # username/password
+        self.__username = None
+        self.__password = None
+        if options.username:
+           self.__username = options.username
+        if options.password:
+           self.__password = options.password
+
+        # auth-cache
+        self.__no_auth_cache = None
+        if options.no_auth_cache:
+           self.__no_auth_cache = options.no_auth_cache
+
+        # server certificate
+        self.__trust_server_cert = None
+        if options.trust_server_cert:
+           self.__trust_server_cert = options.trust_server_cert
+
+        # non-interactive
+        self.__non_interactive = None
+        if options.trust_server_cert:
+           self.__non_interactive = options.non_interactive
+
+        # print_stderr
+        self.__print_stderr = False
+        if options.print_stderr:
+           self.__print_stderr = True
 
         # check compress option
         self.__gzip_path  = options.gzip_path
@@ -414,8 +470,13 @@ class SvnBackup:
         return (rc, bufout, buferr)
 
     def exec_cmd_nt(self, cmd, output=None, printerr=False):
+        if printerr:
+            stderr_handle = None
+        else:
+            # open null device and discard stderr output by setting stderr
+            stderr_handle = open(os.devnull, 'w')
         try:
-            proc = Popen(cmd, stdout=PIPE, stderr=None, shell=False)
+            proc = Popen(cmd, stdout=PIPE, stderr=stderr_handle, shell=False)
         except:
             return (256, "", "Popen failed (%s ...):\n  %s" % (cmd[0],
                     str(sys.exc_info()[1])))
@@ -432,14 +493,68 @@ class SvnBackup:
         rc = proc.wait()
         return (rc, bufout, buferr)
 
-    def get_head_rev(self):
-        cmd = [ self.__svnlook_path, "youngest", self.__repospath ]
-        r = self.exec_cmd(cmd)
+    def get_head_rev_for_local(self):
+        # pass "--" to tell commands that 'self.__repospath' is not a command-line option.
+        cmd = [ self.__svnlook_path, "youngest", "--", self.__repospath ]
+        r = self.exec_cmd(cmd, None, self.__print_stderr)
         if r[0] == 0 and len(r[2]) == 0:
             return int(r[1].strip())
         else:
             print(r[2])
         return -1
+
+    def get_extra_param(self):
+        extra_param = []
+        if self.__username:
+            extra_param.append( "--username" )
+            extra_param.append( self.__username )
+        if self.__password:
+            extra_param.append( "--password" )
+            extra_param.append( self.__password )
+        if self.__trust_server_cert:
+            extra_param.append( "--trust-server-cert" )
+            extra_param.append( "--non-interactive" )
+        elif self.__non_interactive:
+            extra_param.append( "--non-interactive" )
+        if self.__no_auth_cache:
+            extra_param.append( "--no-auth-cache" )
+        return extra_param
+
+    def get_head_rev_for_url(self):
+        extra_param = self.get_extra_param()
+
+        # use 'svn yougest' to get the HEAD revision of URL
+        # 'svn yougest' is supported on subversion 1.9 or laster.
+        # pass "--" to tell commands that 'self.__repospath' is not a command-line option.
+        cmd = [ self.__svn_path, "youngest", "--", self.__repospath ]
+        cmd[2:2] = extra_param
+        r = self.exec_cmd(cmd, None, self.__print_stderr)
+        if r[0] == 0 and len(r[2]) == 0:
+            return int(r[1].strip())
+
+        # use 'svn log' to get the latest revision of URL
+        # it may be different from the HEAD revision. 
+        # pass "--" to tell commands that 'self.__repospath' is not a command-line option.
+        cmd = [ self.__svn_path, "log", "-l", "1", "-q", "--", self.__repospath ]
+        cmd[2:2] = extra_param
+        r = self.exec_cmd(cmd, None, self.__print_stderr)
+        if r[0] == 0 and len(r[2]) == 0:
+            revision_regex = re.compile("^r(\d+)")
+            # revision information is in the second line of 'svn log' output
+            lines = r[1].splitlines()
+            if len(lines) >= 2:
+                result = revision_regex.match(lines[1])
+                if result:
+                     return int(result.group(1).strip())
+        else:
+            print(r[2])
+        return -1
+
+    def get_head_rev(self):
+        if self.__is_local_repos is True:
+            return self.get_head_rev_for_local()
+        else:
+            return self.get_head_rev_for_url()
 
     def get_last_dumped_rev(self):
         filename_regex = re.compile("(.+)\.\d+-(\d+)\.svndmp.*")
@@ -485,7 +600,7 @@ class SvnBackup:
         destdir = self.__transfer[4].replace("%r", self.__reposname)
         cmd = ("smbclient", share, "-U", user, passwd, "-D", destdir,
                 "-c", "put %s %s" % (absfilename, filename))
-        r = self.exec_cmd(cmd)
+        r = self.exec_cmd(cmd, None, self.__print_stderr)
         rc = r[0] == 0
         if not rc:
             print(r[2])
@@ -534,8 +649,17 @@ class SvnBackup:
                 return True
         else:
             print("writing " + absfilename)
-        cmd = [ self.__svnadmin_path, "dump",
-                "--incremental", "-r", revparam, self.__repospath ]
+        
+        # create command line for svnadmin/svnrdump
+        # pass "--" to tell commands that 'self.__repospath' is not a command-line option.
+        if self.__is_local_repos:
+            cmd = [ self.__svnadmin_path, "dump",
+                    "--incremental", "-r", revparam, "--", self.__repospath ]
+        else:
+            cmd = [ self.__svnrdump_path, "dump",
+                    "--incremental", "-r", revparam, "--", self.__repospath ]
+            extra_param = self.get_extra_param()
+            cmd[2:2] = extra_param
         if self.__quiet:
             cmd[2:2] = [ "-q" ]
         if self.__deltas:
@@ -601,7 +725,8 @@ class SvnBackup:
 
 
 if __name__ == "__main__":
-    usage = "usage: svn-backup-dumps.py [options] repospath dumpdir"
+    usage = "usage: svn-backup-dumps.py [options] repospath dumpdir\n" \
+            "       svn-backup-dumps.py [options] URL dumpdir"
     parser = OptionParser(usage=usage, version="%prog "+__version)
     if have_bz2:
         parser.add_option("-b",
@@ -661,6 +786,39 @@ if __name__ == "__main__":
                        action="store", type="string",
                        dest="svnlook_path", default=None,
                        help="svnlook command path.")
+    parser.add_option("--svnrdump-path",
+                       action="store", type="string",
+                       dest="svnrdump_path", default=None,
+                       help="svnrdump command path.")
+    parser.add_option("--svn-path",
+                       action="store", type="string",
+                       dest="svn_path", default=None,
+                       help="svn command path.")
+    parser.add_option("--username",
+                       action="store", type="string",
+                       dest="username", default=None,
+                       help="username")
+    parser.add_option("--password",
+                       action="store", type="string",
+                       dest="password", default=None,
+                       help="password")
+    parser.add_option("--trust-server-cert",
+                       action="store_true", default=False,
+                       dest="trust_server_cert",
+                       help="accept SSL server certificates from unknown"
+                       "certificate authorities without prompting")
+    parser.add_option("--no-auth-cache",
+                       action="store_true", default=False,
+                       dest="no_auth_cache",
+                       help="do not cache authentication tokens")
+    parser.add_option("--non-interactive",
+                       action="store_true", default=False,
+                       dest="non_interactive",
+                       help="do no interactive prompting")
+    parser.add_option("--print-stderr",
+                       action="store_true", default=False,
+                       dest="print_stderr",
+                       help="print error output to stderr")
     parser.add_option("--help-transfer",
                        action="store_true",
                        dest="help_transfer", default=False,

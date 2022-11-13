@@ -153,9 +153,13 @@ __version = "0.7"
 
 import sys
 import os
+defaultLocal = "utf-8"
 if os.name != "nt":
     import fcntl
     import select
+else:
+    import _locale
+    _, defaultLocal = _locale._getdefaultlocale()
 import gzip
 import os.path
 import re
@@ -470,9 +474,9 @@ class SvnBackup:
             print("")
 
         if not output:
-            bufout = bufout.decode()
+            bufout = bufout.decode(defaultLocal)
         if not printerr:
-            buferr = buferr.decode()
+            buferr = buferr.decode(defaultLocal)
 
         return (rc, bufout, buferr)
 
@@ -500,9 +504,9 @@ class SvnBackup:
         rc = proc.wait()
 
         if not output:
-            bufout = bufout.decode()
+            bufout = bufout.decode(defaultLocal)
         if not printerr:
-            buferr = buferr.decode()
+            buferr = buferr.decode(defaultLocal)
 
         return (rc, bufout, buferr)
 

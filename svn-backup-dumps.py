@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 #
 # svn-backup-dumps.py -- Create dumpfiles to backup a subversion repository.
 #
@@ -153,16 +153,20 @@ __version = "0.7"
 
 import sys
 import os
+defaultLocal = "utf-8"
 if os.name != "nt":
     import fcntl
     import select
+else:
+    import _locale
+    _, defaultLocal = _locale._getdefaultlocale()
 import gzip
 import os.path
 import re
 from optparse import OptionParser
 from ftplib import FTP
 from subprocess import Popen, PIPE
-from urlparse import urlparse
+from urllib.parse import urlparse
 
 try:
     import bz2
@@ -299,7 +303,7 @@ class SvnBackup:
         if url.scheme is None:
             # TARGET is a local repospath
             self.__is_local_repos = True
-        
+
             # check repospath
             rpathparts = os.path.split(self.__repospath)
             if len(rpathparts[1]) == 0:
@@ -444,8 +448,8 @@ class SvnBackup:
         self.set_nonblock(stderr)
         readfds = [ stdout, stderr ]
         selres = select.select(readfds, [], [])
-        bufout = ""
-        buferr = ""
+        bufout = b""
+        buferr = b""
         while len(selres[0]) > 0:
             for fd in selres[0]:
                 buf = fd.read(16384)
@@ -458,7 +462,8 @@ class SvnBackup:
                         bufout += buf
                 else:
                     if printerr:
-                        sys.stdout.write("%s " % buf)
+                        # write as binary
+                        sys.stdout.buffer.write(buf)
                     else:
                         buferr += buf
             if len(readfds) == 0:
@@ -467,6 +472,12 @@ class SvnBackup:
         rc = proc.wait()
         if printerr:
             print("")
+
+        if not output:
+            bufout = bufout.decode(defaultLocal)
+        if not printerr:
+            buferr = buferr.decode(defaultLocal)
+
         return (rc, bufout, buferr)
 
     def exec_cmd_nt(self, cmd, output=None, printerr=False):
@@ -481,8 +492,8 @@ class SvnBackup:
             return (256, "", "Popen failed (%s ...):\n  %s" % (cmd[0],
                     str(sys.exc_info()[1])))
         stdout = proc.stdout
-        bufout = ""
-        buferr = ""
+        bufout = b""
+        buferr = b""
         buf = stdout.read(16384)
         while len(buf) > 0:
             if output:
@@ -491,6 +502,12 @@ class SvnBackup:
                 bufout += buf
             buf = stdout.read(16384)
         rc = proc.wait()
+
+        if not output:
+            bufout = bufout.decode(defaultLocal)
+        if not printerr:
+            buferr = buferr.decode(defaultLocal)
+
         return (rc, bufout, buferr)
 
     def get_head_rev_for_local(self):
@@ -533,7 +550,7 @@ class SvnBackup:
             return int(r[1].strip())
 
         # use 'svn log' to get the latest revision of URL
-        # it may be different from the HEAD revision. 
+        # it may be different from the HEAD revision.
         # pass "--" to tell commands that 'self.__repospath' is not a command-line option.
         cmd = [ self.__svn_path, "log", "-l", "1", "-q", "--", self.__repospath ]
         cmd[2:2] = extra_param
@@ -586,7 +603,7 @@ class SvnBackup:
             ftp.quit()
             rc = len(ifd.read(1)) == 0
             ifd.close()
-        except Exception, e:
+        except Exception as e:
             raise SvnBackupException("ftp transfer failed:\n  file:  '%s'\n  error: %s" % \
                     (absfilename, str(e)))
         return rc
@@ -649,7 +666,7 @@ class SvnBackup:
                 return True
         else:
             print("writing " + absfilename)
-        
+
         # create command line for svnadmin/svnrdump
         # pass "--" to tell commands that 'self.__repospath' is not a command-line option.
         if self.__is_local_repos:
@@ -838,7 +855,7 @@ if __name__ == "__main__":
     try:
         backup = SvnBackup(options, args)
         rc = backup.execute()
-    except SvnBackupException, e:
+    except SvnBackupException as e:
         print("svn-backup-dumps.py: %s" % e)
     if rc:
         print("Everything OK.")

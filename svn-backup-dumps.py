@@ -444,8 +444,8 @@ class SvnBackup:
         self.set_nonblock(stderr)
         readfds = [ stdout, stderr ]
         selres = select.select(readfds, [], [])
-        bufout = ""
-        buferr = ""
+        bufout = b""
+        buferr = b""
         while len(selres[0]) > 0:
             for fd in selres[0]:
                 buf = fd.read(16384)
@@ -458,7 +458,8 @@ class SvnBackup:
                         bufout += buf
                 else:
                     if printerr:
-                        sys.stdout.write("%s " % buf)
+                        # write as binary
+                        sys.stdout.buffer.write(buf)
                     else:
                         buferr += buf
             if len(readfds) == 0:
@@ -467,6 +468,12 @@ class SvnBackup:
         rc = proc.wait()
         if printerr:
             print("")
+
+        if not output:
+            bufout = bufout.decode()
+        if not printerr:
+            buferr = buferr.decode()
+
         return (rc, bufout, buferr)
 
     def exec_cmd_nt(self, cmd, output=None, printerr=False):
@@ -481,8 +488,8 @@ class SvnBackup:
             return (256, "", "Popen failed (%s ...):\n  %s" % (cmd[0],
                     str(sys.exc_info()[1])))
         stdout = proc.stdout
-        bufout = ""
-        buferr = ""
+        bufout = b""
+        buferr = b""
         buf = stdout.read(16384)
         while len(buf) > 0:
             if output:
@@ -491,6 +498,12 @@ class SvnBackup:
                 bufout += buf
             buf = stdout.read(16384)
         rc = proc.wait()
+
+        if not output:
+            bufout = bufout.decode()
+        if not printerr:
+            buferr = buferr.decode()
+
         return (rc, bufout, buferr)
 
     def get_head_rev_for_local(self):
